@@ -1,0 +1,128 @@
+/* ============================================================
+   GC DISTRIBUIDOR DE PISO FLOTANTE
+   Laboratorio - Base de Datos Avanzada
+   Aplicacion de funciones avanzadas en consultas:
+   Subconsultas, Agrupamientos (GROUP BY), CASE y DECODE
+   ============================================================ */
+
+/* ============================================================
+   1. CONSULTAR INVENTARIO DISPONIBLE
+   Tecnica utilizada: CASE
+   ============================================================ */
+SELECT p.codigo_producto, p.nombre, i.stock_disponible,
+  CASE 
+    WHEN i.stock_disponible <= i.stock_minimo THEN 'CRITICO'
+    WHEN i.stock_disponible <= i.stock_minimo*2 THEN 'BAJO'
+    ELSE 'NORMAL'
+  END AS estado_stock
+FROM Productos p JOIN Inventario i ON p.codigo_producto = i.codigo_producto
+ORDER BY i.stock_disponible;
+
+/* ============================================================
+   2. BUSCAR PRODUCTO POR NOMBRE
+   Tecnica utilizada: DECODE
+   ============================================================ */
+SELECT nombre, categoria, marca,
+  DECODE(categoria,
+    'Madera','Piso de madera natural',
+    'Laminado','Piso laminado sintetico',
+    'Otro tipo') AS descripcion_categoria
+FROM Productos
+WHERE nombre LIKE '%roble%';
+
+/* ============================================================
+   3. CONSULTAR HISTORIAL DE COMPRAS DE UN CLIENTE
+   Tecnica utilizada: Subconsulta + Agrupamiento (GROUP BY)
+   ============================================================ */
+SELECT v.codigo_cliente, c.nombres_apellidos,
+  COUNT(v.numero_factura) AS total_facturas,
+  SUM(v.valor_total) AS total_comprado,
+  (SELECT MAX(v2.valor_total) FROM Ventas v2 
+   WHERE v2.codigo_cliente = v.codigo_cliente) AS factura_mayor
+FROM Ventas v JOIN Clientes c ON v.codigo_cliente = c.codigo_cliente
+WHERE v.codigo_cliente = 'CLI001'
+GROUP BY v.codigo_cliente, c.nombres_apellidos;
+
+/* ============================================================
+   4. CONSULTAR VENTAS REALIZADAS EN CIERTA FECHA (POR FORMA DE PAGO)
+   Tecnica utilizada: CASE + Agrupamiento (GROUP BY)
+   ============================================================ */
+SELECT fecha,
+  COUNT(*) AS num_ventas,
+  SUM(valor_total) AS total_dia,
+  SUM(CASE WHEN forma_pago = 'Efectivo' THEN valor_total ELSE 0 END) AS total_efectivo,
+  SUM(CASE WHEN forma_pago = 'Tarjeta' THEN valor_total ELSE 0 END) AS total_tarjeta,
+  SUM(CASE WHEN forma_pago = 'Transferencia' THEN valor_total ELSE 0 END) AS total_transferencia
+FROM Ventas
+WHERE fecha = TO_DATE('2026-03-01','YYYY-MM-DD')
+GROUP BY fecha;
+
+/* ============================================================
+   5. CONSULTAR PRODUCTOS BAJOS EN STOCK SIN ROTACION
+   Tecnica utilizada: Subconsulta (NOT EXISTS) + DECODE con SIGN
+   ============================================================ */
+SELECT p.codigo_producto, p.nombre, i.stock_disponible, i.stock_minimo,
+  DECODE(SIGN(i.stock_disponible - i.stock_minimo), 
+    -1,'URGENTE', 0,'REABASTECER','OK') AS urgencia
+FROM Productos p JOIN Inventario i ON p.codigo_producto = i.codigo_producto
+WHERE i.stock_disponible <= i.stock_minimo
+AND NOT EXISTS (SELECT 1 FROM Detalle_Ventas dv WHERE dv.codigo_producto = p.codigo_producto);
+
+/* ============================================================
+   6. REGISTRAR UN NUEVO CLIENTE
+   Tecnica utilizada: Subconsulta (NOT EXISTS)
+   ============================================================ */
+INSERT INTO Clientes (codigo_cliente, nombres_apellidos, identificacion, telefono, correo_electronico, direccion)
+SELECT 'CLI004','Pedro Salinas','1105554443','0961234567','pedro.salinas@gmail.com','Loja'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM Clientes WHERE identificacion = '1105554443');
+
+/* ============================================================
+   7. REGISTRAR UN NUEVO PRODUCTO
+   Tecnica utilizada: CASE
+   ============================================================ */
+INSERT INTO Productos (codigo_producto, nombre, categoria, marca, color, medidas, precio_compra, precio_venta)
+VALUES ('PISO005','Piso vinilico texturizado','Vinilico','EuroFloor','Gris','30x150 cm',20.00,32.99);
+
+SELECT nombre, precio_venta,
+  CASE 
+    WHEN precio_venta < 20 THEN 'ECONOMICO'
+    WHEN precio_venta BETWEEN 20 AND 30 THEN 'MEDIO'
+    ELSE 'PREMIUM'
+  END AS segmento
+FROM Productos WHERE codigo_producto = 'PISO005';
+
+/* ============================================================
+   8. ACTUALIZAR INFORMACION DE PRODUCTO
+   Tecnica utilizada: CASE
+   ============================================================ */
+UPDATE Productos
+SET precio_venta = precio_venta * 
+  CASE categoria
+    WHEN 'Madera' THEN 1.05
+    WHEN 'Laminado' THEN 1.03
+    ELSE 1.02
+  END
+WHERE codigo_producto = 'PISO001';
+
+/* ============================================================
+   9. REGISTRAR COMPRA A PROVEEDOR Y ACTUALIZAR EXISTENCIAS
+   Tecnica utilizada: Subconsulta
+   ============================================================ */
+INSERT INTO Compras VALUES ('COM003', TO_DATE('2026-04-01','YYYY-MM-DD'),'PROV003',960);
+INSERT INTO Detalle_Compras VALUES ('COM003','PISO003',60,16.00);
+
+UPDATE Inventario
+SET stock_disponible = stock_disponible + 
+  (SELECT cantidad FROM Detalle_Compras WHERE numero_compra = 'COM003' AND codigo_producto = 'PISO003')
+WHERE codigo_producto = 'PISO003';
+
+/* ============================================================
+   10. ACTUALIZAR INFORMACION DE PROVEEDOR
+   Tecnica utilizada: DECODE
+   ============================================================ */
+UPDATE Proveedores
+SET telefono = '0995551234',
+    correo_electronico = 'nuevo.contacto@pisosecuador.com',
+    pais_origen = DECODE(pais_origen, 'Ecuador','Ecuador (Nacional)','Importado')
+WHERE codigo_proveedor = 'PROV001';
